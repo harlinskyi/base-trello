@@ -10,6 +10,7 @@ from fastapi import HTTPException, status
 
 from app.schemas.board import BoardCreate, BoardUpdate, BoardResponse, BoardListResponse
 from app.schemas.column import ColumnCreate, ColumnUpdate, ColumnResponse
+from app.schemas.notification import InvitationResponse
 from app.repositories.unit_of_work import UnitOfWork
 from app.patterns.factory import board_factory
 from app.models.column import Column
@@ -145,6 +146,33 @@ class BoardService:
 
         board = await self._uow.boards.get_by_id_with_relations(board_id)
         return BoardResponse.model_validate(board)
+
+    async def get_pending_invitations(
+        self, board_id: uuid.UUID, user_id: uuid.UUID
+    ) -> list[InvitationResponse]:
+        """Отримати pending-запрошення дошки (тільки owner/admin)."""
+        board = await self._uow.boards.get_by_id(board_id)
+        if not board:
+            raise HTTPException(status_code=404, detail="Дошку не знайдено")
+
+        if board.owner_id != user_id and not await self._is_admin(user_id):
+            raise HTTPException(
+                status_code=403,
+                detail="Тільки власник може переглядати запрошення",
+            )
+
+        invitations = await self._uow.invitations.get_pending_for_board(board_id)
+        return [
+            InvitationResponse(
+                id=inv.id,
+                board_id=inv.board_id,
+                inviter_id=inv.inviter_id,
+                invitee_id=inv.invitee_id,
+                status=inv.status,
+                created_at=inv.created_at,
+            )
+            for inv in invitations
+        ]
 
     # --- Columns ---
 

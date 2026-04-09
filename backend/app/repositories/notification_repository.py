@@ -95,6 +95,19 @@ class InvitationRepository(BaseRepository[BoardInvitation]):
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
+    async def get_pending_for_board(self, board_id: uuid.UUID) -> list[BoardInvitation]:
+        """Отримати всі pending-запрошення для конкретної дошки."""
+        stmt = (
+            select(BoardInvitation)
+            .where(
+                BoardInvitation.board_id == board_id,
+                BoardInvitation.status == InvitationStatus.PENDING,
+            )
+            .order_by(BoardInvitation.created_at.desc())
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
     async def get_by_board_and_user(
         self, board_id: uuid.UUID, user_id: uuid.UUID
     ) -> BoardInvitation | None:

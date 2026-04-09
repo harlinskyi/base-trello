@@ -21,6 +21,7 @@ import type {
   User,
   Comment as CommentType,
   Worklog,
+  BoardInvitation,
 } from "@/types";
 import { useAuthStore } from "@/store/authStore";
 import { Header } from "@/components/layout/Header";
@@ -68,6 +69,8 @@ export default function BoardPage() {
   const [columns, setColumns] = useState<ColumnWithCards[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
+  const [invitedUserIds, setInvitedUserIds] = useState<Set<string>>(new Set());
+  const [invitingUserIds, setInvitingUserIds] = useState<Set<string>>(new Set());
 
   // Dialogs
   const [newColumnName, setNewColumnName] = useState("");
@@ -174,12 +177,26 @@ export default function BoardPage() {
 
       const usersRes = await usersApi.getAll();
       setAllUsers(usersRes.data);
+
+      const canManageInvites =
+        currentUser &&
+        (boardRes.data.owner_id === currentUser.id || currentUser.role === "admin");
+
+      if (canManageInvites) {
+        const invRes = await boardsApi.getPendingInvitations(boardId);
+        const pendingInviteeIds = new Set<string>(
+          (invRes.data as BoardInvitation[]).map((inv) => inv.invitee_id),
+        );
+        setInvitedUserIds(pendingInviteeIds);
+      } else {
+        setInvitedUserIds(new Set());
+      }
     } catch {
       navigate("/");
     } finally {
       setLoading(false);
     }
-  }, [boardId, navigate]);
+  }, [boardId, navigate, currentUser]);
 
   useEffect(() => {
     fetchBoard();
@@ -187,8 +204,37 @@ export default function BoardPage() {
 
   // ----- Drag & Drop -----
   const handleDragEnd = async (result: DropResult) => {
-    const { draggableId, source, destination } = result;
+    const { draggableId, source, destination, type } = result;
     if (!destination) return;
+
+    // Перетягування колонок (горизонтально)
+    if (type === "COLUMN") {
+      if (source.index === destination.index) return;
+
+      const reordered = [...columns];
+      const [moved] = reordered.splice(source.index, 1);
+      reordered.splice(destination.index, 0, moved);
+
+      // Оптимістично оновлюємо порядок і позиції
+      const columnsWithPositions = reordered.map((col, idx) => ({
+        ...col,
+        position: idx,
+      }));
+      setColumns(columnsWithPositions);
+
+      // Синхронізація з бекендом
+      try {
+        await Promise.all(
+          columnsWithPositions.map((col, idx) =>
+            boardsApi.updateColumn(col.id, { position: idx }),
+          ),
+        );
+      } catch {
+        fetchBoard(); // Відкат при помилці
+      }
+      return;
+    }
+
     if (
       source.droppableId === destination.droppableId &&
       source.index === destination.index
@@ -512,14 +558,28 @@ export default function BoardPage() {
 
   const handleInviteMember = async (userId: string) => {
     if (!boardId) return;
+    if (invitedUserIds.has(userId) || invitingUserIds.has(userId)) return;
+
+    setInvitingUserIds((prev) => new Set(prev).add(userId));
     try {
       await boardsApi.inviteMember(boardId, userId);
+      setInvitedUserIds((prev) => new Set(prev).add(userId));
       toast.success("Запрошення надіслано!");
       fetchBoard();
     } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      if (typeof detail === "string" && detail.includes("вже надіслано")) {
+        setInvitedUserIds((prev) => new Set(prev).add(userId));
+      }
       toast.error(
-        err.response?.data?.detail || "Не вдалося надіслати запрошення",
+        detail || "Не вдалося надіслати запрошення",
       );
+    } finally {
+      setInvitingUserIds((prev) => {
+        const next = new Set(prev);
+        next.delete(userId);
+        return next;
+      });
     }
   };
 
@@ -608,15 +668,37 @@ export default function BoardPage() {
 
         {/* Kanban board with DnD */}
         <DragDropContext onDragEnd={handleDragEnd}>
-          <div
-            className="flex gap-4 overflow-x-auto pb-4"
-            style={{ minHeight: "60vh" }}
+          <Droppable
+            droppableId="board-columns"
+            direction="horizontal"
+            type="COLUMN"
           >
-            {columns.map((column) => (
-              <div key={column.id} className="flex-shrink-0 w-72">
-                <div className="bg-white rounded-lg border shadow-sm">
+            {(provided) => (
+              <div
+                ref={provided.innerRef}
+                {...provided.droppableProps}
+                className="flex gap-4 overflow-x-auto pb-4"
+                style={{ minHeight: "60vh" }}
+              >
+                {columns.map((column, columnIndex) => (
+                  <Draggable
+                    key={column.id}
+                    draggableId={`column-${column.id}`}
+                    index={columnIndex}
+                    isDragDisabled={!isOwner}
+                  >
+                    {(columnProvided) => (
+                      <div
+                        ref={columnProvided.innerRef}
+                        {...columnProvided.draggableProps}
+                        className="flex-shrink-0 w-72"
+                      >
+                        <div className="bg-white rounded-lg border shadow-sm">
                   {/* Column header */}
-                  <div className="flex items-center justify-between p-3 border-b">
+                  <div
+                    className="flex items-center justify-between p-3 border-b"
+                    {...columnProvided.dragHandleProps}
+                  >
                     {editingColumnId === column.id ? (
                       <Input
                         className="h-7 text-sm font-semibold flex-1 mr-2"
@@ -639,6 +721,11 @@ export default function BoardPage() {
                       </h3>
                     )}
                     <div className="flex gap-1">
+                      {isOwner && (
+                        <span className="inline-flex items-center justify-center h-7 w-7 text-muted-foreground">
+                          <GripVertical className="h-3.5 w-3.5" />
+                        </span>
+                      )}
                       <Button
                         variant="ghost"
                         size="icon"
@@ -659,7 +746,7 @@ export default function BoardPage() {
                   </div>
 
                   {/* Droppable area */}
-                  <Droppable droppableId={column.id}>
+                  <Droppable droppableId={column.id} type="CARD">
                     {(provided, snapshot) => (
                       <div
                         ref={provided.innerRef}
@@ -774,9 +861,14 @@ export default function BoardPage() {
                     )}
                   </Droppable>
                 </div>
+                      </div>
+                    )}
+                  </Draggable>
+                ))}
+                {provided.placeholder}
               </div>
-            ))}
-          </div>
+            )}
+          </Droppable>
         </DragDropContext>
       </div>
 
@@ -874,9 +966,9 @@ export default function BoardPage() {
                   <SelectValue placeholder="Оберіть пріоритет" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="low">low</SelectItem>
-                  <SelectItem value="medium">medium</SelectItem>
-                  <SelectItem value="high">high</SelectItem>
+                  <SelectItem value="low">Низький</SelectItem>
+                  <SelectItem value="medium">Середній</SelectItem>
+                  <SelectItem value="high">Високий</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -891,7 +983,7 @@ export default function BoardPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label>Estimate (годин)</Label>
+              <Label>Оцінка часу (годин)</Label>
               <Input
                 type="number"
                 min="0"
@@ -923,7 +1015,7 @@ export default function BoardPage() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Дедлайн</Label>
+              <Label>Крайній термін</Label>
               <Input
                 type="date"
                 value={cardForm.due_date}
@@ -1153,9 +1245,9 @@ export default function BoardPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__">Без пріоритету</SelectItem>
-                    <SelectItem value="low">low</SelectItem>
-                    <SelectItem value="medium">medium</SelectItem>
-                    <SelectItem value="high">high</SelectItem>
+                    <SelectItem value="low">Низький</SelectItem>
+                    <SelectItem value="medium">Середній</SelectItem>
+                    <SelectItem value="high">Високий</SelectItem>
                   </SelectContent>
                 </Select>
               ) : activeCard?.priority ? (
@@ -1231,10 +1323,10 @@ export default function BoardPage() {
               )}
             </div>
 
-            {/* Дедлайн */}
+            {/* Крайній термін */}
             <div>
               <Label className="text-muted-foreground flex items-center gap-1">
-                <CalendarDays className="h-3.5 w-3.5" /> Дедлайн
+                <CalendarDays className="h-3.5 w-3.5" /> Крайній термін
               </Label>
               {isEditing ? (
                 <Input
@@ -1258,9 +1350,9 @@ export default function BoardPage() {
               )}
             </div>
 
-            {/* Estimate + Progress */}
+            {/* Оцінка часу + Progress */}
             <div>
-              <Label className="text-muted-foreground">Estimate (годин)</Label>
+              <Label className="text-muted-foreground">Оцінка часу (годин)</Label>
               {isEditing ? (
                 <Input
                   type="number"
@@ -1547,13 +1639,23 @@ export default function BoardPage() {
                     <span className="text-sm">
                       {u.username} ({u.email})
                     </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleInviteMember(u.id)}
-                    >
-                      <UserPlus className="h-4 w-4 mr-1" /> Запросити
-                    </Button>
+                    {invitedUserIds.has(u.id) ? (
+                      <Button variant="secondary" size="sm" disabled>
+                        <Check className="h-4 w-4 mr-1" /> Запрошення надіслано
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleInviteMember(u.id)}
+                        disabled={invitingUserIds.has(u.id)}
+                      >
+                        <UserPlus className="h-4 w-4 mr-1" />
+                        {invitingUserIds.has(u.id)
+                          ? "Надсилаємо..."
+                          : "Запросити"}
+                      </Button>
+                    )}
                   </div>
                 ))}
             </div>

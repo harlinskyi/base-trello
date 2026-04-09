@@ -67,6 +67,8 @@ export const boardsApi = {
   delete: (id: string) => api.delete(`/boards/${id}`),
   inviteMember: (boardId: string, memberId: string) =>
     api.post(`/boards/${boardId}/members/${memberId}`),
+  getPendingInvitations: (boardId: string) =>
+    api.get(`/boards/${boardId}/invitations/pending`),
   removeMember: (boardId: string, memberId: string) =>
     api.delete(`/boards/${boardId}/members/${memberId}`),
   createColumn: (boardId: string, data: { name: string; position: number }) =>

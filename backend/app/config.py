@@ -13,7 +13,9 @@ class Settings(BaseSettings):
     DEBUG: bool = True
 
     # Database
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@db:5432/kanban"
+    # Локальний дефолт для запуску бекенду з хоста.
+    # У Docker Compose це значення перевизначається через environment (host = db).
+    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/kanban"
 
     # JWT
     SECRET_KEY: str = "super-secret-key-change-in-production"

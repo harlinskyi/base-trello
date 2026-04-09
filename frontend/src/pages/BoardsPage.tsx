@@ -47,6 +47,17 @@ export default function BoardsPage() {
     fetchBoards();
   }, []);
 
+  useEffect(() => {
+    const handleBoardsRefresh = () => {
+      fetchBoards();
+    };
+
+    window.addEventListener("boards:refresh", handleBoardsRefresh);
+    return () => {
+      window.removeEventListener("boards:refresh", handleBoardsRefresh);
+    };
+  }, []);
+
   const handleCreate = async () => {
     if (!newTitle.trim()) return;
     setCreating(true);

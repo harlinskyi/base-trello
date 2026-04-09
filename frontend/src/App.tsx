@@ -3,7 +3,15 @@
  * Архітектура MVC: App = Controller, Pages = View, API/Store = Model.
  */
 
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import {
+  BrowserRouter,
+  Navigate,
+  Route,
+  Routes,
+  matchPath,
+  useLocation,
+} from "react-router-dom";
+import { useEffect } from "react";
 
 import AdminPage from "@/pages/AdminPage";
 import BoardPage from "@/pages/BoardPage";
@@ -13,6 +21,27 @@ import ProfilePage from "@/pages/ProfilePage";
 import RegisterPage from "@/pages/RegisterPage";
 import { Toaster } from "sonner";
 import { useAuthStore } from "@/store/authStore";
+
+const APP_TITLE = "Base Kanban Trello";
+
+function PageTitleManager() {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    let pageTitle = "Сторінка";
+
+    if (pathname === "/") pageTitle = "Мої дошки";
+    else if (pathname === "/login") pageTitle = "Вхід";
+    else if (pathname === "/register") pageTitle = "Реєстрація";
+    else if (pathname === "/profile") pageTitle = "Профіль";
+    else if (pathname === "/admin") pageTitle = "Адмін-панель";
+    else if (matchPath("/board/:boardId", pathname)) pageTitle = "Дошка";
+
+    document.title = `${pageTitle} - ${APP_TITLE}`;
+  }, [pathname]);
+
+  return null;
+}
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -29,6 +58,7 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <BrowserRouter>
+      <PageTitleManager />
       <Toaster richColors position="top-right" />
       <Routes>
         <Route path="/login" element={<LoginPage />} />

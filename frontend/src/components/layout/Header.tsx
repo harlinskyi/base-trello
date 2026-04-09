@@ -17,10 +17,10 @@ import type { BoardInvitation, Notification } from "@/types";
 import { Link, useNavigate } from "react-router-dom";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { notificationsApi } from "@/lib/api";
 import { useAuthStore } from "@/store/authStore";
+import Dropdown from "../ui/dropdown";
 
 export function Header() {
   const { user, isAuthenticated, logout } = useAuthStore();
@@ -91,6 +91,9 @@ export function Header() {
       await notificationsApi.respondInvitation(invId, action);
       setInvitations((prev) => prev.filter((i) => i.id !== invId));
       fetchUnreadCount();
+      if (action === "accept") {
+        window.dispatchEvent(new CustomEvent("boards:refresh"));
+      }
     } catch {}
   };
 
@@ -106,29 +109,18 @@ export function Header() {
       <div className="container mx-auto flex h-14 items-center justify-between px-4">
         <div className="flex items-center gap-6">
           <Link to="/" className="flex items-center gap-2 font-bold text-lg">
-            <LayoutDashboard className="h-5 w-5" />
+            {/* <LayoutDashboard className="h-5 w-5" /> */}
+            <img src="/logo.png" alt="Logo" width={34} height={34} />
             Kanban Board
           </Link>
           <nav className="flex items-center gap-4">
-            <Link
-              to="/"
-              className="text-sm text-muted-foreground hover:text-foreground"
-            >
-              Дошки
-            </Link>
-            <Link
-              to="/profile"
-              className="text-sm text-muted-foreground hover:text-foreground"
-            >
-              Профіль
-            </Link>
             {user?.role === "admin" && (
               <Link
                 to="/admin"
                 className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
               >
                 <Shield className="h-3 w-3" />
-                Адмін
+                Адмін-панель
               </Link>
             )}
           </nav>
@@ -245,15 +237,20 @@ export function Header() {
               </div>
             )}
           </div>
-
-          <span className="text-sm text-muted-foreground flex items-center gap-1">
-            <User className="h-4 w-4" />
-            {user?.username}
-          </span>
-          <Button variant="ghost" size="sm" onClick={handleLogout}>
-            <LogOut className="h-4 w-4 mr-1" />
-            Вийти
-          </Button>
+          <Dropdown trigger={
+            <Button variant="ghost" size="icon">
+              <User className="h-5 w-5" />
+            </Button>
+          } items={[{
+            label: user?.username || "Профіль",
+            onClick: () => navigate("/profile"),
+            icon: <User className="h-4 w-4" />
+          }, {
+            label: 'Вийти',
+            onClick: handleLogout,
+            variant: "danger",
+            icon: <LogOut className="h-4 w-4" />
+          }]} />
         </div>
       </div>
     </header>

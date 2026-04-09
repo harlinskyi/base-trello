@@ -103,6 +103,17 @@ async def remove_member(
     return await service.remove_member(board_id, member_id, current_user.id)
 
 
+@router.get("/{board_id}/invitations/pending", response_model=list[InvitationResponse])
+async def get_pending_invitations(
+    board_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+):
+    """Отримати pending-запрошення по дошці (тільки owner/admin)."""
+    service = BoardService(uow)
+    return await service.get_pending_invitations(board_id, current_user.id)
+
+
 # --- Columns ---
 
 

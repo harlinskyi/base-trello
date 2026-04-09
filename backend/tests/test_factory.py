@@ -111,7 +111,7 @@ class TestCardFactory:
         assert card.assignee_id == assignee_id
 
     def test_card_with_estimate_and_due_date(self):
-        """Картка з estimate та дедлайном."""
+        """Картка з estimate та Крайній терміном."""
         from datetime import date
 
         due = date(2026, 12, 31)
