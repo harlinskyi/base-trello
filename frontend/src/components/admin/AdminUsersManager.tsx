@@ -13,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,12 +28,59 @@ export function AdminUsersManager() {
   const [users, setUsers] = useState<User[]>([]);
   const [editUser, setEditUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [sortBy, setSortBy] = useState<"username" | "email" | "role" | "created_at">(
+    "created_at",
+  );
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [editForm, setEditForm] = useState({
     username: "",
     email: "",
     role: "user",
   });
   const currentUser = useAuthStore((state) => state.user);
+
+  const filteredAndSortedUsers = useMemo(() => {
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+    const filtered = users.filter((user) => {
+      if (!normalizedSearch) return true;
+      return (
+        user.username.toLowerCase().includes(normalizedSearch) ||
+        user.email.toLowerCase().includes(normalizedSearch) ||
+        user.role.toLowerCase().includes(normalizedSearch)
+      );
+    });
+
+    return filtered.sort((a, b) => {
+      let result = 0;
+
+      if (sortBy === "created_at") {
+        result =
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      } else {
+        result = a[sortBy].localeCompare(b[sortBy], "uk-UA");
+      }
+
+      return sortOrder === "asc" ? result : -result;
+    });
+  }, [users, searchTerm, sortBy, sortOrder]);
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredAndSortedUsers.length / pageSize),
+  );
+
+  const paginatedUsers = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    const end = start + pageSize;
+    return filteredAndSortedUsers.slice(start, end);
+  }, [filteredAndSortedUsers, currentPage, pageSize]);
+
+  const startIndex =
+    filteredAndSortedUsers.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const endIndex = Math.min(currentPage * pageSize, filteredAndSortedUsers.length);
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -50,6 +97,16 @@ export function AdminUsersManager() {
   useEffect(() => {
     fetchUsers();
   }, []);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [pageSize, searchTerm, sortBy, sortOrder]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   const handleEdit = (user: User) => {
     setEditUser(user);
@@ -97,12 +154,68 @@ export function AdminUsersManager() {
         <Badge variant="outline">Всього {users.length}</Badge>
       </div>
 
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <Input
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          placeholder="Пошук за username, email або роллю"
+          className="w-full max-w-sm"
+        />
+        <Select
+          value={sortBy}
+          onValueChange={(value) =>
+            setSortBy(value as "username" | "email" | "role" | "created_at")
+          }
+        >
+          <SelectTrigger className="w-[190px]">
+            <SelectValue placeholder="Сортувати за" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="created_at">Датою створення</SelectItem>
+            <SelectItem value="username">Username</SelectItem>
+            <SelectItem value="email">Email</SelectItem>
+            <SelectItem value="role">Роллю</SelectItem>
+          </SelectContent>
+        </Select>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() =>
+            setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))
+          }
+        >
+          Порядок: {sortOrder === "asc" ? "за зростанням" : "за спаданням"}
+        </Button>
+      </div>
+
       {loading ? (
         <div className="rounded-lg border bg-card py-10 text-center text-muted-foreground shadow-sm">
           Завантаження користувачів...
         </div>
       ) : (
         <div className="overflow-hidden rounded-lg border bg-card shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b px-3 py-3">
+            <p className="text-sm text-muted-foreground">
+              Показано {startIndex}-{endIndex} з {filteredAndSortedUsers.length}
+            </p>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">На сторінці</span>
+              <Select
+                value={String(pageSize)}
+                onValueChange={(value) => setPageSize(Number(value))}
+              >
+                <SelectTrigger className="w-[92px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="5">5</SelectItem>
+                  <SelectItem value="10">10</SelectItem>
+                  <SelectItem value="20">20</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
           <table className="w-full text-sm">
             <thead className="bg-muted/50">
               <tr>
@@ -114,44 +227,80 @@ export function AdminUsersManager() {
               </tr>
             </thead>
             <tbody>
-              {users.map((user) => (
-                <tr key={user.id} className="border-t hover:bg-muted/30">
-                  <td className="p-3">{user.username}</td>
-                  <td className="p-3">{user.email}</td>
-                  <td className="p-3">
-                    <span
-                      className={`rounded-full px-2 py-1 text-xs ${user.role === "admin" ? "bg-primary text-primary-foreground" : "bg-secondary"}`}
-                    >
-                      {user.role}
-                    </span>
+              {paginatedUsers.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={5}
+                    className="p-6 text-center text-sm text-muted-foreground"
+                  >
+                    Користувачів за вашим запитом не знайдено.
                   </td>
-                  <td className="p-3 text-muted-foreground">
-                    {new Date(user.created_at).toLocaleDateString("uk-UA")}
-                  </td>
-                  <td className="p-3 text-right">
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleEdit(user)}
+                </tr>
+              ) : (
+                paginatedUsers.map((user) => (
+                  <tr key={user.id} className="border-t hover:bg-muted/30">
+                    <td className="p-3">{user.username}</td>
+                    <td className="p-3">{user.email}</td>
+                    <td className="p-3">
+                      <span
+                        className={`rounded-full px-2 py-1 text-xs ${user.role === "admin" ? "bg-primary text-primary-foreground" : "bg-secondary"}`}
                       >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      {user.id !== currentUser?.id && (
+                        {user.role}
+                      </span>
+                    </td>
+                    <td className="p-3 text-muted-foreground">
+                      {new Date(user.created_at).toLocaleDateString("uk-UA")}
+                    </td>
+                    <td className="p-3 text-right">
+                      <div className="flex justify-end gap-2">
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => handleDelete(user.id)}
+                          onClick={() => handleEdit(user)}
                         >
-                          <Trash2 className="h-4 w-4 text-destructive" />
+                          <Pencil className="h-4 w-4" />
                         </Button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                        {user.id !== currentUser?.id && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDelete(user.id)}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t px-3 py-3">
+            <p className="text-sm text-muted-foreground">
+              Сторінка {currentPage} з {totalPages}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+              >
+                Назад
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage >= totalPages}
+                onClick={() =>
+                  setCurrentPage((prev) => Math.min(totalPages, prev + 1))
+                }
+              >
+                Вперед
+              </Button>
+            </div>
+          </div>
         </div>
       )}
 
