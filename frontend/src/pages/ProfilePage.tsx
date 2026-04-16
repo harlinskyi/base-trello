@@ -67,7 +67,7 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-background">
       <Header />
       <div className="container mx-auto py-8 px-4 max-w-lg space-y-6">
         <Card>

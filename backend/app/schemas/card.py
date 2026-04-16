@@ -76,5 +76,7 @@ class CardResponse(BaseModel):
     card_type: str | None = None
     created_at: datetime
     updated_at: datetime
+    comments_count: int = 0
+    logged_hours: float = 0.0
 
     model_config = {"from_attributes": True}

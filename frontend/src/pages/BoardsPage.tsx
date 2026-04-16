@@ -90,7 +90,7 @@ export default function BoardsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-background">
       <Header />
       <div className="container mx-auto py-8 px-4">
         <div className="flex items-center justify-between mb-6">

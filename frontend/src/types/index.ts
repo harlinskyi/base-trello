@@ -32,6 +32,7 @@ export interface Board {
 export interface Column {
   id: string;
   name: string;
+  color: string | null;
   position: number;
   board_id: string;
 }
@@ -52,6 +53,8 @@ export interface Card {
   assignee: User | null;
   created_at: string;
   updated_at: string;
+  comments_count?: number;
+  logged_hours?: number;
 }
 
 export interface Comment {
@@ -114,4 +117,82 @@ export interface BoardInvitation {
   created_at: string;
   board_title?: string;
   inviter_username?: string;
+}
+
+export interface StatsBucket {
+  label: string;
+  value: number;
+  percentage: number;
+}
+
+export interface AdminOverviewStats {
+  total_users: number;
+  admin_users: number;
+  total_boards: number;
+  total_columns: number;
+  total_cards: number;
+  assigned_cards: number;
+  unassigned_cards: number;
+  overdue_cards: number;
+  due_this_week_cards: number;
+  total_comments: number;
+  total_worklog_entries: number;
+  tracked_hours_total: number;
+  estimated_hours_total: number;
+  unread_notifications: number;
+  pending_invitations: number;
+  avg_cards_per_board: number;
+  avg_members_per_board: number;
+}
+
+export interface AdminRecentActivityStats {
+  new_users_last_30_days: number;
+  new_boards_last_30_days: number;
+  new_cards_last_30_days: number;
+  new_comments_last_30_days: number;
+}
+
+export interface AdminTopUserStats {
+  id: string;
+  username: string;
+  role: Role;
+  owned_boards: number;
+  assigned_cards: number;
+  comments_count: number;
+  worklog_entries: number;
+  logged_hours: number;
+}
+
+export interface AdminTopBoardStats {
+  id: string;
+  title: string;
+  owner_username: string;
+  members_count: number;
+  columns_count: number;
+  cards_count: number;
+  estimated_hours_total: number;
+  tracked_hours_total: number;
+}
+
+export interface AdminActivityPoint {
+  date: string;
+  users: number;
+  boards: number;
+  cards: number;
+  comments: number;
+}
+
+export interface AdminStats {
+  generated_at: string;
+  overview: AdminOverviewStats;
+  recent_activity: AdminRecentActivityStats;
+  users_by_role: StatsBucket[];
+  cards_by_priority: StatsBucket[];
+  cards_by_type: StatsBucket[];
+  cards_by_status: StatsBucket[];
+  invitations_by_status: StatsBucket[];
+  notifications_by_type: StatsBucket[];
+  top_users: AdminTopUserStats[];
+  top_boards: AdminTopBoardStats[];
+  activity_timeline: AdminActivityPoint[];
 }

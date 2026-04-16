@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import inspect, text
 
 from app.config import settings
 from app.database import engine, Base, async_session_factory
@@ -31,9 +32,18 @@ async def lifespan(app: FastAPI):
     """Створення таблиць при старті (для розробки)."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_ensure_columns_color_column)
     logger.info("Database tables created")
     await seed_admin()
     yield
+
+
+def _ensure_columns_color_column(sync_conn):
+    """Легка схема-міграція для dev: додає columns.color, якщо поля ще немає."""
+    inspector = inspect(sync_conn)
+    columns = {col["name"] for col in inspector.get_columns("columns")}
+    if "color" not in columns:
+        sync_conn.execute(text("ALTER TABLE columns ADD COLUMN color VARCHAR(7) NULL"))
 
 
 async def seed_admin():

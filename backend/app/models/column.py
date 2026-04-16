@@ -26,6 +26,7 @@ class Column(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
+    color: Mapped[str | None] = mapped_column(String(7), nullable=True, default=None)
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     board_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False
@@ -41,4 +42,4 @@ class Column(Base):
     )
 
     def __repr__(self) -> str:
-        return f"<Column(id={self.id}, name={self.name}, position={self.position})>"
+        return f"<Column(id={self.id}, name={self.name}, color={self.color}, position={self.position})>"

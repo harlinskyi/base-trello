@@ -191,6 +191,7 @@ class BoardService:
 
         column = Column(
             name=data.name,
+            color=data.color,
             position=data.position,
             board_id=board_id,
         )
@@ -212,10 +213,14 @@ class BoardService:
                 detail="Тільки власник може редагувати колонки",
             )
 
-        if data.name is not None:
+        fields_set = getattr(data, "model_fields_set", set())
+
+        if "name" in fields_set and data.name is not None:
             column.name = data.name
-        if data.position is not None:
+        if "position" in fields_set and data.position is not None:
             column.position = data.position
+        if "color" in fields_set:
+            column.color = data.color
 
         await self._uow.columns.update(column)
         await self._uow.commit()

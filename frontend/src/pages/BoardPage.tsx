@@ -4,7 +4,8 @@
  * View — KanbanColumn та KanbanCard.
  */
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { HexColorPicker } from "react-colorful";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   DragDropContext,
@@ -57,6 +58,9 @@ import {
   ArrowRight,
   Clock,
   CalendarDays,
+  Search,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -70,10 +74,13 @@ export default function BoardPage() {
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [invitedUserIds, setInvitedUserIds] = useState<Set<string>>(new Set());
-  const [invitingUserIds, setInvitingUserIds] = useState<Set<string>>(new Set());
+  const [invitingUserIds, setInvitingUserIds] = useState<Set<string>>(
+    new Set(),
+  );
 
   // Dialogs
   const [newColumnName, setNewColumnName] = useState("");
+  const [newColumnColor, setNewColumnColor] = useState<string | null>(null);
   const [showColumnDialog, setShowColumnDialog] = useState(false);
   const [showCardDialog, setShowCardDialog] = useState(false);
   const [showCardDetail, setShowCardDetail] = useState(false);
@@ -138,6 +145,28 @@ export default function BoardPage() {
   const [editingBoardTitle, setEditingBoardTitle] = useState(false);
   const [boardTitleDraft, setBoardTitleDraft] = useState("");
 
+  // Search & filter
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Collapsed columns
+  const [collapsedColumns, setCollapsedColumns] = useState<Set<string>>(
+    new Set(),
+  );
+
+  // Quick-add inline
+  const [quickAddColumnId, setQuickAddColumnId] = useState<string | null>(null);
+
+  // Color pickers
+  const [columnColorPickerId, setColumnColorPickerId] = useState<string | null>(
+    null,
+  );
+  const [showNewColumnColorPicker, setShowNewColumnColorPicker] =
+    useState(false);
+  const [showNewCardColorPicker, setShowNewCardColorPicker] = useState(false);
+  const [showEditColorPicker, setShowEditColorPicker] = useState(false);
+  const [quickAddTitle, setQuickAddTitle] = useState("");
+  const [savingQuickAdd, setSavingQuickAdd] = useState(false);
+
   const isOwner =
     board?.owner_id === currentUser?.id || currentUser?.role === "admin";
 
@@ -180,7 +209,8 @@ export default function BoardPage() {
 
       const canManageInvites =
         currentUser &&
-        (boardRes.data.owner_id === currentUser.id || currentUser.role === "admin");
+        (boardRes.data.owner_id === currentUser.id ||
+          currentUser.role === "admin");
 
       if (canManageInvites) {
         const invRes = await boardsApi.getPendingInvitations(boardId);
@@ -282,9 +312,11 @@ export default function BoardPage() {
     try {
       await boardsApi.createColumn(boardId, {
         name: newColumnName,
+        color: newColumnColor,
         position: columns.length,
       });
       setNewColumnName("");
+      setNewColumnColor(null);
       setShowColumnDialog(false);
       toast.success("Колонку створено");
       fetchBoard();
@@ -328,6 +360,32 @@ export default function BoardPage() {
       );
       setEditingColumnId(null);
     }
+  };
+
+  const colorDebounceRef = useRef<
+    Record<string, ReturnType<typeof setTimeout>>
+  >({});
+
+  const handleSetColumnColor = (columnId: string, color: string | null) => {
+    setColumns((prev) =>
+      prev.map((col) => (col.id === columnId ? { ...col, color } : col)),
+    );
+  };
+
+  const saveColumnColor = async (columnId: string, color: string | null) => {
+    try {
+      await boardsApi.updateColumn(columnId, { color });
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || "Помилка оновлення кольору");
+    }
+  };
+
+  const debouncedSaveColumnColor = (columnId: string, color: string) => {
+    clearTimeout(colorDebounceRef.current[columnId]);
+    colorDebounceRef.current[columnId] = setTimeout(
+      () => saveColumnColor(columnId, color),
+      500,
+    );
   };
 
   // ----- Cards -----
@@ -511,9 +569,11 @@ export default function BoardPage() {
       setWorklogForm({ days: "", hours: "", minutes: "", description: "" });
       const res = await cardsApi.getWorklogs(activeCard.id);
       setWorklogs(res.data);
-      toast.success("Worklog додано");
+      toast.success("Затрачений час додано");
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || "Помилка додавання worklog");
+      toast.error(
+        err.response?.data?.detail || "Помилка додавання затраченого часу",
+      );
     }
   };
 
@@ -571,9 +631,7 @@ export default function BoardPage() {
       if (typeof detail === "string" && detail.includes("вже надіслано")) {
         setInvitedUserIds((prev) => new Set(prev).add(userId));
       }
-      toast.error(
-        detail || "Не вдалося надіслати запрошення",
-      );
+      toast.error(detail || "Не вдалося надіслати запрошення");
     } finally {
       setInvitingUserIds((prev) => {
         const next = new Set(prev);
@@ -594,9 +652,54 @@ export default function BoardPage() {
     }
   };
 
+  // ----- Quick Add -----
+  const handleQuickAdd = async (columnId: string) => {
+    if (!quickAddTitle.trim()) {
+      setQuickAddColumnId(null);
+      setQuickAddTitle("");
+      return;
+    }
+    setSavingQuickAdd(true);
+    try {
+      await cardsApi.create(columnId, { title: quickAddTitle.trim() });
+      setQuickAddTitle("");
+      setQuickAddColumnId(null);
+      fetchBoard();
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || "Помилка створення картки");
+    } finally {
+      setSavingQuickAdd(false);
+    }
+  };
+
+  // ----- Helpers -----
+  const toggleCollapse = (columnId: string) => {
+    setCollapsedColumns((prev) => {
+      const next = new Set(prev);
+      if (next.has(columnId)) next.delete(columnId);
+      else next.add(columnId);
+      return next;
+    });
+  };
+
+  const getInitials = (name: string) =>
+    name
+      .split(" ")
+      .map((w) => w[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
+
+  const getAvatarColor = (seed: string) => {
+    const hue = [...seed].reduce((acc, ch) => acc + ch.charCodeAt(0), 0) % 360;
+    return `hsl(${hue} 70% 45%)`;
+  };
+
+  const DEFAULT_COLUMN_COLOR = "#d1d5db";
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-background">
         <Header />
         <div className="flex items-center justify-center py-20">
           Завантаження...
@@ -608,7 +711,7 @@ export default function BoardPage() {
   const memberIds = new Set(board?.members?.map((m) => m.id) || []);
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-background">
       <Header />
       <div className="container p-4">
         {/* Board header */}
@@ -647,7 +750,11 @@ export default function BoardPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setShowColumnDialog(true)}
+              onClick={() => {
+                setNewColumnName("");
+                setNewColumnColor(null);
+                setShowColumnDialog(true);
+              }}
             >
               <Plus className="h-4 w-4 mr-1" /> Колонка
             </Button>
@@ -655,16 +762,36 @@ export default function BoardPage() {
         </div>
 
         {/* Members bar */}
-        {board?.members && board.members.length > 0 && (
-          <div className="flex items-center gap-2 mb-4">
-            <span className="text-sm text-muted-foreground">Учасники:</span>
-            {board.members.map((m) => (
-              <Badge key={m.id} variant="secondary">
-                {m.username}
-              </Badge>
-            ))}
+        {/* Search + Members bar */}
+        <div className="flex items-center gap-4 mb-4 flex-wrap">
+          <div className="relative flex-shrink-0">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Пошук карток..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-8 pr-3 py-1.5 text-sm border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary/50 w-52"
+            />
           </div>
-        )}
+          {board?.members && board.members.length > 0 && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm text-muted-foreground">Учасники:</span>
+              {board.members.map((m) => (
+                <div
+                  key={m.id}
+                  className="h-7 w-7 rounded-full flex items-center justify-center text-xs font-semibold text-white shrink-0"
+                  style={{
+                    backgroundColor: getAvatarColor(m.username),
+                  }}
+                  title={m.username}
+                >
+                  {getInitials(m.username)}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         {/* Kanban board with DnD */}
         <DragDropContext onDragEnd={handleDragEnd}>
@@ -680,191 +807,487 @@ export default function BoardPage() {
                 className="flex gap-4 overflow-x-auto pb-4"
                 style={{ minHeight: "60vh" }}
               >
-                {columns.map((column, columnIndex) => (
-                  <Draggable
-                    key={column.id}
-                    draggableId={`column-${column.id}`}
-                    index={columnIndex}
-                    isDragDisabled={!isOwner}
-                  >
-                    {(columnProvided) => (
-                      <div
-                        ref={columnProvided.innerRef}
-                        {...columnProvided.draggableProps}
-                        className="flex-shrink-0 w-72"
-                      >
-                        <div className="bg-white rounded-lg border shadow-sm">
-                  {/* Column header */}
-                  <div
-                    className="flex items-center justify-between p-3 border-b"
-                    {...columnProvided.dragHandleProps}
-                  >
-                    {editingColumnId === column.id ? (
-                      <Input
-                        className="h-7 text-sm font-semibold flex-1 mr-2"
-                        value={editingColumnName}
-                        onChange={(e) => setEditingColumnName(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") handleRenameColumn();
-                          if (e.key === "Escape") setEditingColumnId(null);
-                        }}
-                        onBlur={handleRenameColumn}
-                        autoFocus
-                      />
-                    ) : (
-                      <h3
-                        className="font-semibold text-sm cursor-pointer hover:text-primary truncate"
-                        onDoubleClick={() => startRenamingColumn(column)}
-                        title="Подвійний клік для редагування"
-                      >
-                        {column.name}
-                      </h3>
-                    )}
-                    <div className="flex gap-1">
-                      {isOwner && (
-                        <span className="inline-flex items-center justify-center h-7 w-7 text-muted-foreground">
-                          <GripVertical className="h-3.5 w-3.5" />
-                        </span>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() => openAddCard(column.id)}
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() => handleDeleteColumn(column.id)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                      </Button>
-                    </div>
-                  </div>
-
-                  {/* Droppable area */}
-                  <Droppable droppableId={column.id} type="CARD">
-                    {(provided, snapshot) => (
-                      <div
-                        ref={provided.innerRef}
-                        {...provided.droppableProps}
-                        className={`p-2 min-h-[100px] transition-colors ${snapshot.isDraggingOver ? "bg-blue-50" : ""}`}
-                      >
-                        {column.cards.map((card, index) => (
-                          <Draggable
-                            key={card.id}
-                            draggableId={card.id}
-                            index={index}
-                          >
-                            {(provided, snapshot) => (
-                              <div
-                                ref={provided.innerRef}
-                                {...provided.draggableProps}
-                                className={`mb-2 bg-white border rounded-md shadow-sm cursor-pointer hover:shadow transition-shadow ${snapshot.isDragging ? "shadow-lg ring-2 ring-primary/20" : ""}`}
-                                onClick={() => openCardDetail(card)}
-                              >
-                                {card.color && (
-                                  <div
-                                    className="h-1.5 rounded-t-md"
-                                    style={{ backgroundColor: card.color }}
-                                  />
+                {columns.map((column, columnIndex) => {
+                  const accentColor = column.color ?? DEFAULT_COLUMN_COLOR;
+                  const isCollapsed = collapsedColumns.has(column.id);
+                  const filteredCards = searchQuery.trim()
+                    ? column.cards.filter(
+                        (c) =>
+                          c.title
+                            .toLowerCase()
+                            .includes(searchQuery.toLowerCase()) ||
+                          c.tags?.some((t) =>
+                            t.toLowerCase().includes(searchQuery.toLowerCase()),
+                          ) ||
+                          c.assignee?.username
+                            .toLowerCase()
+                            .includes(searchQuery.toLowerCase()),
+                      )
+                    : column.cards;
+                  return (
+                    <Draggable
+                      key={column.id}
+                      draggableId={`column-${column.id}`}
+                      index={columnIndex}
+                      isDragDisabled={!isOwner}
+                    >
+                      {(columnProvided) => (
+                        <div
+                          ref={columnProvided.innerRef}
+                          {...columnProvided.draggableProps}
+                          className="flex-shrink-0 w-72"
+                        >
+                          <div className="bg-card rounded-lg border shadow-sm">
+                            {/* Column accent bar */}
+                            <div
+                              className="h-1.5 rounded-t-lg"
+                              style={{ backgroundColor: accentColor }}
+                            />
+                            {/* Column header */}
+                            <div className="flex items-center justify-between p-3 border-b">
+                              {editingColumnId === column.id ? (
+                                <Input
+                                  className="h-7 text-sm font-semibold flex-1 mr-2"
+                                  value={editingColumnName}
+                                  onChange={(e) =>
+                                    setEditingColumnName(e.target.value)
+                                  }
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") handleRenameColumn();
+                                    if (e.key === "Escape")
+                                      setEditingColumnId(null);
+                                  }}
+                                  onBlur={handleRenameColumn}
+                                  autoFocus
+                                />
+                              ) : (
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <h3
+                                    className="font-semibold text-sm cursor-pointer hover:text-primary truncate"
+                                    onDoubleClick={() =>
+                                      startRenamingColumn(column)
+                                    }
+                                    title="Подвійний клік для редагування"
+                                  >
+                                    {column.name}
+                                  </h3>
+                                  <span
+                                    className="text-xs font-medium px-1.5 py-0.5 rounded-full text-white shrink-0"
+                                    style={{ backgroundColor: accentColor }}
+                                  >
+                                    {filteredCards.length}
+                                  </span>
+                                </div>
+                              )}
+                              <div className="flex gap-1 shrink-0">
+                                {isOwner && (
+                                  <span
+                                    {...columnProvided.dragHandleProps}
+                                    className="inline-flex items-center justify-center h-7 w-7 text-muted-foreground cursor-grab"
+                                  >
+                                    <GripVertical className="h-3.5 w-3.5" />
+                                  </span>
                                 )}
-                                <div className="p-3">
-                                  <div className="flex items-start gap-2">
+                                {isOwner && (
+                                  <>
                                     <div
-                                      {...provided.dragHandleProps}
-                                      className="mt-0.5"
+                                      className="relative"
+                                      onMouseDown={(e) => e.stopPropagation()}
                                     >
-                                      <GripVertical className="h-4 w-4 text-muted-foreground" />
+                                      <button
+                                        className="h-7 w-7 rounded border cursor-pointer shrink-0"
+                                        style={{
+                                          backgroundColor:
+                                            column.color ??
+                                            DEFAULT_COLUMN_COLOR,
+                                        }}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setColumnColorPickerId(
+                                            columnColorPickerId === column.id
+                                              ? null
+                                              : column.id,
+                                          );
+                                        }}
+                                        title="Колір колонки"
+                                      />
+                                      {columnColorPickerId === column.id && (
+                                        <>
+                                          <div
+                                            className="fixed inset-0 z-40"
+                                            onClick={() =>
+                                              setColumnColorPickerId(null)
+                                            }
+                                          />
+                                          <div className="absolute top-8 right-0 z-50">
+                                            <HexColorPicker
+                                              color={
+                                                column.color ??
+                                                DEFAULT_COLUMN_COLOR
+                                              }
+                                              onChange={(hex) => {
+                                                handleSetColumnColor(
+                                                  column.id,
+                                                  hex,
+                                                );
+                                                debouncedSaveColumnColor(
+                                                  column.id,
+                                                  hex,
+                                                );
+                                              }}
+                                            />
+                                          </div>
+                                        </>
+                                      )}
                                     </div>
-                                    <div className="flex-1 min-w-0">
-                                      <p className="font-medium text-sm truncate">
-                                        {card.title}
-                                      </p>
-                                      {card.priority && (
-                                        <Badge
-                                          variant={
-                                            card.priority === "high"
-                                              ? "destructive"
-                                              : card.priority === "medium"
-                                                ? "default"
-                                                : "secondary"
-                                          }
-                                          className="text-xs py-0 mt-1"
-                                        >
-                                          {card.priority}
-                                        </Badge>
-                                      )}
-                                      {card.assignee && (
-                                        <p className="text-xs text-muted-foreground mt-1">
-                                          Виконавець: {card.assignee.username}
-                                        </p>
-                                      )}
-                                      {card.tags && card.tags.length > 0 && (
-                                        <div className="flex flex-wrap gap-1 mt-1.5">
-                                          {card.tags.map((tag, i) => (
-                                            <Badge
-                                              key={i}
-                                              variant="outline"
-                                              className="text-xs py-0"
-                                            >
-                                              {tag}
-                                            </Badge>
-                                          ))}
+                                    {column.color && (
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-7 w-7"
+                                        onClick={() => {
+                                          setColumnColorPickerId(null);
+                                          saveColumnColor(column.id, null);
+                                          handleSetColumnColor(column.id, null);
+                                        }}
+                                        title="Скинути колір"
+                                      >
+                                        <X className="h-3.5 w-3.5" />
+                                      </Button>
+                                    )}
+                                  </>
+                                )}
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7"
+                                  onClick={() => toggleCollapse(column.id)}
+                                  title={
+                                    isCollapsed ? "Розгорнути" : "Згорнути"
+                                  }
+                                >
+                                  {isCollapsed ? (
+                                    <ChevronRight className="h-3.5 w-3.5" />
+                                  ) : (
+                                    <ChevronDown className="h-3.5 w-3.5" />
+                                  )}
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7"
+                                  onClick={() => openAddCard(column.id)}
+                                >
+                                  <Plus className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7"
+                                  onClick={() => handleDeleteColumn(column.id)}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                                </Button>
+                              </div>
+                            </div>
+
+                            {/* Droppable area */}
+                            {!isCollapsed && (
+                              <Droppable droppableId={column.id} type="CARD">
+                                {(provided, snapshot) => (
+                                  <div
+                                    ref={provided.innerRef}
+                                    {...provided.droppableProps}
+                                    className={`p-2 min-h-[100px] transition-colors ${snapshot.isDraggingOver ? "bg-primary/5" : ""}`}
+                                  >
+                                    {filteredCards.length === 0 &&
+                                      !snapshot.isDraggingOver && (
+                                        <div className="flex flex-col items-center justify-center py-8 text-muted-foreground/50 select-none">
+                                          <div className="text-3xl mb-1">
+                                            · · ·
+                                          </div>
+                                          <span className="text-xs">
+                                            {searchQuery
+                                              ? "Нічого не знайдено"
+                                              : "Перетягніть сюди картку"}
+                                          </span>
                                         </div>
                                       )}
-                                      <div className="flex flex-wrap gap-1 mt-1.5">
-                                        {card.card_type &&
-                                          card.card_type !== "basic" && (
-                                            <Badge
-                                              variant="outline"
-                                              className="text-xs py-0"
-                                            >
-                                              {card.card_type === "urgent"
-                                                ? "Термінова"
-                                                : card.card_type === "bug"
-                                                  ? "Баг"
-                                                  : card.card_type === "feature"
-                                                    ? "Фіча"
-                                                    : card.card_type}
-                                            </Badge>
-                                          )}
-                                        {card.due_date && (
-                                          <Badge
-                                            variant={
-                                              new Date(card.due_date) <
-                                              new Date()
-                                                ? "destructive"
-                                                : "outline"
-                                            }
-                                            className="text-xs py-0 flex items-center gap-0.5"
+                                    {filteredCards.map((card, index) => (
+                                      <Draggable
+                                        key={card.id}
+                                        draggableId={card.id}
+                                        index={index}
+                                      >
+                                        {(provided, snapshot) => (
+                                          <div
+                                            ref={provided.innerRef}
+                                            {...provided.draggableProps}
+                                            className={`mb-2 bg-card border rounded-md shadow-sm cursor-pointer hover:shadow transition-shadow ${snapshot.isDragging ? "shadow-lg ring-2 ring-primary/20" : ""}`}
+                                            onClick={() => openCardDetail(card)}
                                           >
-                                            <CalendarDays className="h-3 w-3" />
-                                            {new Date(
-                                              card.due_date,
-                                            ).toLocaleDateString("uk-UA")}
-                                          </Badge>
+                                            {card.color && (
+                                              <div
+                                                className="h-1.5 rounded-t-md"
+                                                style={{
+                                                  backgroundColor: card.color,
+                                                }}
+                                              />
+                                            )}
+                                            <div className="p-3">
+                                              <div className="flex items-start gap-2">
+                                                <div
+                                                  {...provided.dragHandleProps}
+                                                  className="mt-0.5"
+                                                >
+                                                  <GripVertical className="h-4 w-4 text-muted-foreground" />
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                  <p className="font-medium text-sm truncate">
+                                                    {card.title}
+                                                  </p>
+                                                  {card.priority && (
+                                                    <Badge
+                                                      variant={
+                                                        card.priority === "high"
+                                                          ? "destructive"
+                                                          : card.priority ===
+                                                              "medium"
+                                                            ? "default"
+                                                            : "secondary"
+                                                      }
+                                                      className="text-xs py-0 mt-1"
+                                                    >
+                                                      {card.priority === "high"
+                                                        ? "Високий"
+                                                        : card.priority ===
+                                                            "medium"
+                                                          ? "Середній"
+                                                          : "Низький"}
+                                                    </Badge>
+                                                  )}
+                                                  {/* Assignee avatar + comment count */}
+                                                  {(card.assignee ||
+                                                    (card.comments_count ?? 0) >
+                                                      0) && (
+                                                    <div className="flex items-center justify-between mt-1.5">
+                                                      {card.assignee ? (
+                                                        <div className="flex items-center gap-1.5">
+                                                          <div
+                                                            className="h-5 w-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0"
+                                                            style={{
+                                                              backgroundColor:
+                                                                getAvatarColor(
+                                                                  card.assignee
+                                                                    .username,
+                                                                ),
+                                                            }}
+                                                            title={
+                                                              card.assignee
+                                                                .username
+                                                            }
+                                                          >
+                                                            {getInitials(
+                                                              card.assignee
+                                                                .username,
+                                                            )}
+                                                          </div>
+                                                          <span className="text-xs text-muted-foreground truncate max-w-[80px]">
+                                                            {
+                                                              card.assignee
+                                                                .username
+                                                            }
+                                                          </span>
+                                                        </div>
+                                                      ) : (
+                                                        <span />
+                                                      )}
+                                                      {(card.comments_count ??
+                                                        0) > 0 && (
+                                                        <div className="flex items-center gap-0.5 text-xs text-muted-foreground">
+                                                          <MessageSquare className="h-3 w-3" />
+                                                          <span>
+                                                            {
+                                                              card.comments_count
+                                                            }
+                                                          </span>
+                                                        </div>
+                                                      )}
+                                                    </div>
+                                                  )}
+                                                  {card.tags &&
+                                                    card.tags.length > 0 && (
+                                                      <div className="flex flex-wrap gap-1 mt-1.5">
+                                                        {card.tags.map(
+                                                          (tag, i) => (
+                                                            <Badge
+                                                              key={i}
+                                                              variant="outline"
+                                                              className="text-xs py-0"
+                                                            >
+                                                              {tag}
+                                                            </Badge>
+                                                          ),
+                                                        )}
+                                                      </div>
+                                                    )}
+                                                  <div className="flex flex-wrap gap-1 mt-1.5">
+                                                    {card.card_type &&
+                                                      card.card_type !==
+                                                        "basic" && (
+                                                        <Badge
+                                                          variant="outline"
+                                                          className="text-xs py-0"
+                                                        >
+                                                          {card.card_type ===
+                                                          "urgent"
+                                                            ? "Термінова"
+                                                            : card.card_type ===
+                                                                "bug"
+                                                              ? "Баг"
+                                                              : card.card_type ===
+                                                                  "feature"
+                                                                ? "Фіча"
+                                                                : card.card_type}
+                                                        </Badge>
+                                                      )}
+                                                    {card.due_date && (
+                                                      <Badge
+                                                        variant={
+                                                          new Date(
+                                                            card.due_date,
+                                                          ) < new Date()
+                                                            ? "destructive"
+                                                            : "outline"
+                                                        }
+                                                        className="text-xs py-0 flex items-center gap-0.5"
+                                                      >
+                                                        <CalendarDays className="h-3 w-3" />
+                                                        {new Date(
+                                                          card.due_date,
+                                                        ).toLocaleDateString(
+                                                          "uk-UA",
+                                                        )}
+                                                      </Badge>
+                                                    )}
+                                                  </div>
+                                                  {/* Mini worklog progress */}
+                                                  {card.estimate != null &&
+                                                    card.estimate > 0 &&
+                                                    (() => {
+                                                      const logged =
+                                                        card.logged_hours ?? 0;
+                                                      const pct = Math.min(
+                                                        (logged /
+                                                          card.estimate) *
+                                                          100,
+                                                        100,
+                                                      );
+                                                      const isOver =
+                                                        logged > card.estimate;
+                                                      return (
+                                                        <div className="mt-1.5">
+                                                          <div className="flex justify-between text-[10px] text-muted-foreground mb-0.5">
+                                                            <span className="flex items-center gap-0.5">
+                                                              <Clock className="h-2.5 w-2.5" />
+                                                              {logged}h /{" "}
+                                                              {card.estimate}h
+                                                            </span>
+                                                            {isOver && (
+                                                              <span className="text-red-500">
+                                                                +
+                                                                {(
+                                                                  logged -
+                                                                  card.estimate
+                                                                ).toFixed(1)}
+                                                                h
+                                                              </span>
+                                                            )}
+                                                          </div>
+                                                          <div className="w-full bg-muted rounded-full h-1 overflow-hidden">
+                                                            <div
+                                                              className={`h-1 transition-all ${isOver ? "bg-red-500" : pct >= 80 ? "bg-yellow-500" : "bg-green-500"}`}
+                                                              style={{
+                                                                width: `${pct}%`,
+                                                              }}
+                                                            />
+                                                          </div>
+                                                        </div>
+                                                      );
+                                                    })()}
+                                                </div>
+                                              </div>
+                                            </div>
+                                          </div>
                                         )}
-                                      </div>
-                                    </div>
+                                      </Draggable>
+                                    ))}
+                                    {provided.placeholder}
                                   </div>
-                                </div>
+                                )}
+                              </Droppable>
+                            )}
+                            {/* Quick-add card */}
+                            {!isCollapsed && !searchQuery && (
+                              <div className="px-2 pb-2">
+                                {quickAddColumnId === column.id ? (
+                                  <div className="flex gap-1">
+                                    <Input
+                                      autoFocus
+                                      className="h-7 text-xs"
+                                      placeholder="Назва картки..."
+                                      value={quickAddTitle}
+                                      onChange={(e) =>
+                                        setQuickAddTitle(e.target.value)
+                                      }
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter")
+                                          handleQuickAdd(column.id);
+                                        if (e.key === "Escape") {
+                                          setQuickAddColumnId(null);
+                                          setQuickAddTitle("");
+                                        }
+                                      }}
+                                      disabled={savingQuickAdd}
+                                    />
+                                    <Button
+                                      size="icon"
+                                      className="h-7 w-7 shrink-0"
+                                      onClick={() => handleQuickAdd(column.id)}
+                                      disabled={savingQuickAdd}
+                                    >
+                                      <Check className="h-3.5 w-3.5" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      className="h-7 w-7 shrink-0"
+                                      onClick={() => {
+                                        setQuickAddColumnId(null);
+                                        setQuickAddTitle("");
+                                      }}
+                                    >
+                                      <X className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    className="w-full text-left text-xs text-muted-foreground hover:text-foreground py-1 px-1 rounded hover:bg-muted/50 transition-colors flex items-center gap-1"
+                                    onClick={() => {
+                                      setQuickAddColumnId(column.id);
+                                      setQuickAddTitle("");
+                                    }}
+                                  >
+                                    <Plus className="h-3 w-3" /> Додати картку
+                                  </button>
+                                )}
                               </div>
                             )}
-                          </Draggable>
-                        ))}
-                        {provided.placeholder}
-                      </div>
-                    )}
-                  </Droppable>
-                </div>
-                      </div>
-                    )}
-                  </Draggable>
-                ))}
+                          </div>
+                        </div>
+                      )}
+                    </Draggable>
+                  );
+                })}
                 {provided.placeholder}
               </div>
             )}
@@ -887,6 +1310,52 @@ export default function BoardPage() {
                 placeholder="Назва колонки"
                 onKeyDown={(e) => e.key === "Enter" && handleAddColumn()}
               />
+            </div>
+            <div className="space-y-2">
+              <Label>Колір (опційно)</Label>
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <button
+                    type="button"
+                    className="h-9 w-9 rounded border cursor-pointer"
+                    style={{
+                      backgroundColor: newColumnColor ?? DEFAULT_COLUMN_COLOR,
+                    }}
+                    onClick={() =>
+                      setShowNewColumnColorPicker(!showNewColumnColorPicker)
+                    }
+                    title="Вибрати колір"
+                  />
+                  {showNewColumnColorPicker && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => setShowNewColumnColorPicker(false)}
+                      />
+                      <div className="absolute top-10 left-0 z-50">
+                        <HexColorPicker
+                          color={newColumnColor ?? DEFAULT_COLUMN_COLOR}
+                          onChange={(hex) => setNewColumnColor(hex)}
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setNewColumnColor(null);
+                    setShowNewColumnColorPicker(false);
+                  }}
+                >
+                  Без кольору
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Якщо колір не задано, використовується світло-сірий.
+              </p>
             </div>
           </div>
           <DialogFooter>
@@ -974,13 +1443,33 @@ export default function BoardPage() {
             </div>
             <div className="space-y-2">
               <Label>Колір</Label>
-              <Input
-                type="color"
-                value={cardForm.color || "#3b82f6"}
-                onChange={(e) =>
-                  setCardForm({ ...cardForm, color: e.target.value })
-                }
-              />
+              <div className="relative inline-block">
+                <button
+                  type="button"
+                  className="h-9 w-9 rounded border cursor-pointer"
+                  style={{ backgroundColor: cardForm.color || "#3b82f6" }}
+                  onClick={() =>
+                    setShowNewCardColorPicker(!showNewCardColorPicker)
+                  }
+                  title="Вибрати колір"
+                />
+                {showNewCardColorPicker && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setShowNewCardColorPicker(false)}
+                    />
+                    <div className="absolute top-10 left-0 z-50">
+                      <HexColorPicker
+                        color={cardForm.color || "#3b82f6"}
+                        onChange={(hex) =>
+                          setCardForm({ ...cardForm, color: hex })
+                        }
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
             <div className="space-y-2">
               <Label>Оцінка часу (годин)</Label>
@@ -1272,14 +1761,31 @@ export default function BoardPage() {
             <div>
               <Label className="text-muted-foreground">Колір</Label>
               {isEditing ? (
-                <Input
-                  type="color"
-                  className="mt-1 w-20 h-8"
-                  value={editForm.color || "#3b82f6"}
-                  onChange={(e) =>
-                    setEditForm({ ...editForm, color: e.target.value })
-                  }
-                />
+                <div className="mt-1 relative inline-block">
+                  <button
+                    type="button"
+                    className="h-8 w-8 rounded border cursor-pointer"
+                    style={{ backgroundColor: editForm.color || "#3b82f6" }}
+                    onClick={() => setShowEditColorPicker(!showEditColorPicker)}
+                    title="Вибрати колір"
+                  />
+                  {showEditColorPicker && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => setShowEditColorPicker(false)}
+                      />
+                      <div className="absolute top-9 left-0 z-50">
+                        <HexColorPicker
+                          color={editForm.color || "#3b82f6"}
+                          onChange={(hex) =>
+                            setEditForm({ ...editForm, color: hex })
+                          }
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
               ) : activeCard?.color ? (
                 <div
                   className="mt-1 w-8 h-8 rounded border"
@@ -1352,7 +1858,9 @@ export default function BoardPage() {
 
             {/* Оцінка часу + Progress */}
             <div>
-              <Label className="text-muted-foreground">Оцінка часу (годин)</Label>
+              <Label className="text-muted-foreground">
+                Оцінка часу (годин)
+              </Label>
               {isEditing ? (
                 <Input
                   type="number"
@@ -1438,7 +1946,7 @@ export default function BoardPage() {
                   onClick={() => setActiveTab("worklogs")}
                 >
                   <Clock className="h-4 w-4" />
-                  Worklogs ({worklogs.length})
+                  Затрачений час ({worklogs.length})
                 </button>
               </div>
 

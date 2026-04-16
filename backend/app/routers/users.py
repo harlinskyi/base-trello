@@ -5,8 +5,10 @@
 
 from fastapi import APIRouter, Depends
 
+from app.schemas.admin import AdminStatsResponse
 from app.schemas.user import UserUpdate, UserResponse, ChangePassword
 from app.services.user_service import UserService
+from app.services.admin_service import AdminStatsService
 from app.middleware.auth import get_uow, get_current_user, require_admin
 from app.repositories.unit_of_work import UnitOfWork
 from app.models.user import User
@@ -56,6 +58,16 @@ async def get_all_users(
 
 
 # --- Admin routes ---
+
+
+@router.get("/stats", response_model=AdminStatsResponse)
+async def get_admin_stats(
+    admin: User = Depends(require_admin),
+    uow: UnitOfWork = Depends(get_uow),
+):
+    """[Admin] Отримати агреговану статистику системи."""
+    service = AdminStatsService(uow)
+    return await service.get_dashboard_stats()
 
 
 @router.put("/{user_id}", response_model=UserResponse)

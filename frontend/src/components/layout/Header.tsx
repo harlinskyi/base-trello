@@ -3,24 +3,22 @@
  * Включає дзвіночок нотифікацій із підрахунком непрочитаних.
  */
 
-import {
-  Bell,
-  Check,
-  CheckCheck,
-  LayoutDashboard,
-  LogOut,
-  Shield,
-  User,
-  X,
-} from "lucide-react";
+import { Bell, Check, CheckCheck, LogOut, Shield, User, X } from "lucide-react";
 import type { BoardInvitation, Notification } from "@/types";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Link, useNavigate } from "react-router-dom";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { notificationsApi } from "@/lib/api";
 import { useAuthStore } from "@/store/authStore";
-import Dropdown from "../ui/dropdown";
 
 export function Header() {
   const { user, isAuthenticated, logout } = useAuthStore();
@@ -105,7 +103,7 @@ export function Header() {
   if (!isAuthenticated) return null;
 
   return (
-    <header className="border-b bg-white">
+    <header className="border-b bg-background">
       <div className="container mx-auto flex h-14 items-center justify-between px-4">
         <div className="flex items-center gap-6">
           <Link to="/" className="flex items-center gap-2 font-bold text-lg">
@@ -116,7 +114,7 @@ export function Header() {
           <nav className="flex items-center gap-4">
             {user?.role === "admin" && (
               <Link
-                to="/admin"
+                to="/admin/stats"
                 className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
               >
                 <Shield className="h-3 w-3" />
@@ -144,7 +142,7 @@ export function Header() {
 
             {/* Dropdown panel */}
             {showPanel && (
-              <div className="absolute right-0 top-10 w-96 bg-white border rounded-lg shadow-xl z-50 max-h-[70vh] overflow-y-auto">
+              <div className="absolute right-0 top-10 w-96 bg-popover border rounded-lg shadow-xl z-50 max-h-[70vh] overflow-y-auto text-popover-foreground">
                 <div className="flex items-center justify-between p-3 border-b">
                   <h3 className="font-semibold text-sm">Сповіщення</h3>
                   <Button
@@ -216,7 +214,7 @@ export function Header() {
                       notifications.slice(0, 20).map((n) => (
                         <div
                           key={n.id}
-                          className={`px-3 py-2 border-b last:border-0 text-sm ${!n.is_read ? "bg-blue-50/50" : ""}`}
+                          className={`px-3 py-2 border-b last:border-0 text-sm ${!n.is_read ? "bg-primary/5" : ""}`}
                         >
                           <p className="font-medium text-xs">{n.title}</p>
                           <p className="text-muted-foreground text-xs mt-0.5">
@@ -237,20 +235,29 @@ export function Header() {
               </div>
             )}
           </div>
-          <Dropdown trigger={
-            <Button variant="ghost" size="icon">
-              <User className="h-5 w-5" />
-            </Button>
-          } items={[{
-            label: user?.username || "Профіль",
-            onClick: () => navigate("/profile"),
-            icon: <User className="h-4 w-4" />
-          }, {
-            label: 'Вийти',
-            onClick: handleLogout,
-            variant: "danger",
-            icon: <LogOut className="h-4 w-4" />
-          }]} />
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon">
+                <User className="h-5 w-5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => navigate("/profile")}>
+                <User className="mr-2 h-4 w-4" />
+                {user?.username || "Профіль"}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={handleLogout}
+                className="text-destructive focus:text-destructive"
+              >
+                <LogOut className="mr-2 h-4 w-4" />
+                Вийти
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <ThemeToggle />
         </div>
       </div>
     </header>

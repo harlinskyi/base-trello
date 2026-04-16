@@ -50,6 +50,7 @@ export const usersApi = {
   changePassword: (data: { current_password: string; new_password: string }) =>
     api.post("/users/me/change-password", data),
   getAll: () => api.get("/users"),
+  getAdminStats: () => api.get("/users/stats"),
   adminUpdate: (
     userId: string,
     data: { username?: string; email?: string; role?: string },
@@ -71,11 +72,13 @@ export const boardsApi = {
     api.get(`/boards/${boardId}/invitations/pending`),
   removeMember: (boardId: string, memberId: string) =>
     api.delete(`/boards/${boardId}/members/${memberId}`),
-  createColumn: (boardId: string, data: { name: string; position: number }) =>
-    api.post(`/boards/${boardId}/columns`, data),
+  createColumn: (
+    boardId: string,
+    data: { name: string; position: number; color?: string | null },
+  ) => api.post(`/boards/${boardId}/columns`, data),
   updateColumn: (
     columnId: string,
-    data: { name?: string; position?: number },
+    data: { name?: string; position?: number; color?: string | null },
   ) => api.put(`/boards/columns/${columnId}`, data),
   deleteColumn: (columnId: string) => api.delete(`/boards/columns/${columnId}`),
 };

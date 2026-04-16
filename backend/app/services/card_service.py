@@ -178,14 +178,23 @@ class CardService:
     async def get_cards_by_column(self, column_id: uuid.UUID) -> list[CardResponse]:
         """Отримати картки колонки."""
         cards = await self._uow.cards.get_by_column(column_id)
-        return [CardResponse.model_validate(c) for c in cards]
+        result = []
+        for c in cards:
+            r = CardResponse.model_validate(c)
+            r.comments_count = len(c.comments) if c.comments else 0
+            r.logged_hours = sum(w.hours for w in c.worklogs) if c.worklogs else 0.0
+            result.append(r)
+        return result
 
     async def get_card_detail(self, card_id: uuid.UUID) -> CardResponse:
         """Отримати деталі картки."""
         card = await self._uow.cards.get_by_id_with_relations(card_id)
         if not card:
             raise HTTPException(status_code=404, detail="Картку не знайдено")
-        return CardResponse.model_validate(card)
+        r = CardResponse.model_validate(card)
+        r.comments_count = len(card.comments) if card.comments else 0
+        r.logged_hours = sum(w.hours for w in card.worklogs) if card.worklogs else 0.0
+        return r
 
     async def update_card(
         self, card_id: uuid.UUID, data: CardUpdate, user_id: uuid.UUID

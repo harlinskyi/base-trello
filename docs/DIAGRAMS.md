@@ -35,6 +35,7 @@ classDiagram
     class Column {
         +UUID id
         +String name
+        +String color
         +int position
         +UUID board_id
         +__repr__() str
@@ -144,7 +145,7 @@ graph TB
 
     subgraph Backend["Backend (FastAPI)"]
         Routers["Routers<br/>(Controller)"]
-        Services["Services<br/>(Business Logic)"]
+        Services["Services<br/>(Business Logic)<br/>AuthService, UserService, BoardService,<br/>CardService, NotificationService,<br/>AdminStatsService"]
         Patterns["Patterns<br/>(GoF: Factory, Observer,<br/>Singleton, Strategy, Repository)"]
         Repositories["Repositories<br/>(Data Access)"]
         Models["Models<br/>(Domain Entities)"]
@@ -319,7 +320,7 @@ sequenceDiagram
 
     User->>UI: Заповнює форму картки
     UI->>API: cardsApi.create(columnId, data)
-    API->>Router: POST /api/columns/{id}/cards
+    API->>Router: POST /api/cards/column/{column_id}
     Router->>Auth: get_current_user(token)
     Auth-->>Router: User object
     Router->>Service: create_card(column_id, data, user_id)
@@ -334,8 +335,8 @@ sequenceDiagram
     DB-->>Repo: ok
     Service->>Observer: notify("card.assigned", data)
     Observer->>Observer: CardAssignmentObserver.handle()
-    Service->>Service: create_notification (Strategy)
-    Service->>Repo: commit()
+    Service->>Service: create_notification (Strategy via NotificationService)
+    Service->>DB: commit()
     Service-->>Router: CardResponse
     Router-->>API: JSON Response
     API-->>UI: card data
@@ -359,7 +360,7 @@ sequenceDiagram
 
     User->>UI: Перетягує картку
     UI->>API: cardsApi.move(cardId, {column_id, position})
-    API->>Router: PUT /api/cards/{id}/move
+    API->>Router: PATCH /api/cards/{id}/move
     Router->>Service: move_card(card_id, data, user_id)
     Service->>DB: get card, old_column, new_column
 
@@ -415,7 +416,38 @@ sequenceDiagram
     API-->>Store: response.data
     Store->>Store: setUser(user), setToken(token)
     Store-->>UI: authenticated
-    UI-->>User: Перенаправлення на /boards
+    UI-->>User: Перенаправлення на /
+```
+
+---
+
+## 7. Діаграма послідовності — Отримання адмін-статистики
+
+```mermaid
+sequenceDiagram
+    actor Admin as Адміністратор
+    participant UI as AdminStatsPage
+    participant API as API Layer
+    participant Router as Users Router
+    participant Auth as require_admin
+    participant Service as AdminStatsService
+    participant UoW as UnitOfWork
+    participant DB as PostgreSQL
+
+    Admin->>UI: Відкриває /admin/stats
+    UI->>API: usersApi.getAdminStats()
+    API->>Router: GET /api/users/stats
+    Router->>Auth: require_admin(current_user)
+    Auth-->>Router: admin user
+    Router->>Service: get_dashboard_stats()
+    Service->>UoW: агрегувати users / boards / columns / cards
+    UoW->>DB: COUNT / SUM / GROUP BY / JOIN
+    DB-->>UoW: агреговані дані
+    UoW-->>Service: overview, buckets, top_users, top_boards
+    Service-->>Router: AdminStatsResponse
+    Router-->>API: JSON statistics payload
+    API-->>UI: stats data
+    UI-->>Admin: Відображення KPI, розподілів і таймлайну
 ```
 
 ---
